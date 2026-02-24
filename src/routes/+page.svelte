@@ -7,12 +7,22 @@
   import { slideshowStore } from "../infrastructure/slideshowStore";
   import { musicStore } from "../infrastructure/musicStore";
   import { TauriPhotoRepository } from "../infrastructure/tauriPhotoRepository";
+  import { TauriPhotoCache } from "../infrastructure/tauriPhotoCache";
   import { TauriMusicController } from "../infrastructure/tauriMusicController";
   import { advanceSlide } from "../application/usecases/advanceSlide";
   import { prefetchPhotos } from "../application/usecases/prefetchPhotos";
+  import { loadLibrary } from "../application/usecases/loadLibrary";
+  import { cachePhotos } from "../application/usecases/cachePhotos";
+  import type { PhotoRepository } from "../application/ports";
 
   const photoRepo = new TauriPhotoRepository();
+  const photoCache = new TauriPhotoCache();
   const musicController = new TauriMusicController();
+
+  // Adapter: mid-session top-ups go through the cache layer
+  const cacheAsRepo: PhotoRepository = {
+    fetchPhotos: () => photoCache.fetchAndCache(),
+  };
 
   let intervalId: number | null = null;
   let musicPollId: number | null = null;
@@ -25,13 +35,37 @@
     await win.maximize();
     await win.setFullscreen(true);
 
-    // Initial photo load
+    // Try loading from local cache first
     try {
-      const initialPhotos = await prefetchPhotos(photoRepo, []);
-      const result = await advanceSlide(photoRepo, initialPhotos);
+      const cachedPhotos = await loadLibrary(photoCache);
 
-      slideshowStore.setPhoto(result.current);
-      slideshowStore.setQueue(result.queue);
+      if (cachedPhotos.length > 0) {
+        // Instant start from cache
+        const result = await advanceSlide(cacheAsRepo, cachedPhotos);
+        slideshowStore.setPhoto(result.current);
+        slideshowStore.setQueue(result.queue);
+
+        // Background: fetch more photos and add them to the queue
+        cachePhotos(photoCache).then((newPhotos) => {
+          if (newPhotos.length > 0) {
+            const unsubscribe = slideshowStore.subscribe((s) => {
+              if (s) {
+                slideshowStore.setQueue([...s.queue, ...newPhotos]);
+              }
+            });
+            unsubscribe();
+          }
+        }).catch(() => {});
+      } else {
+        // First launch: no cache, fetch from network
+        const initialPhotos = await prefetchPhotos(photoRepo, []);
+        const result = await advanceSlide(photoRepo, initialPhotos);
+        slideshowStore.setPhoto(result.current);
+        slideshowStore.setQueue(result.queue);
+
+        // Background: cache the photos we just showed + more
+        cachePhotos(photoCache).catch(() => {});
+      }
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
       console.error("Failed to load photos:", e);
@@ -67,7 +101,7 @@
     
     if (!state) return;
     
-    const result = await advanceSlide(photoRepo, state.queue);
+    const result = await advanceSlide(cacheAsRepo, state.queue);
     
     slideshowStore.setPhoto(result.current);
     slideshowStore.setQueue(result.queue);

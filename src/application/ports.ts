@@ -4,6 +4,11 @@ export interface PhotoRepository {
   fetchPhotos(): Promise<Photo[]>;
 }
 
+export interface PhotoCache {
+  getCachedPhotos(): Promise<Photo[]>;
+  fetchAndCache(): Promise<Photo[]>;
+}
+
 export interface SlideshowClock {
   start(): void;
   stop(): void;
