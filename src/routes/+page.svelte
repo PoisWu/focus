@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { onMount } from "svelte";
+  import { onMount, onDestroy } from "svelte";
+  import { get } from "svelte/store";
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import PhotoFrame from "../presentation/components/PhotoFrame.svelte";
   import TimerDot from "../presentation/components/TimerDot.svelte";
@@ -10,7 +11,6 @@
   import { TauriPhotoCache } from "../infrastructure/tauriPhotoCache";
   import { TauriMusicController } from "../infrastructure/tauriMusicController";
   import { advanceSlide } from "../application/usecases/advanceSlide";
-  import { prefetchPhotos } from "../application/usecases/prefetchPhotos";
   import { loadLibrary } from "../application/usecases/loadLibrary";
 
 
@@ -34,7 +34,7 @@
       const cachedPhotos = await loadLibrary(photoCache);
       const startup = cachedPhotos.length > 0
         ? cachedPhotos
-        : await prefetchPhotos(photoRepo, []);
+        : await photoRepo.fetchPhotos();
 
       const result = await advanceSlide(photoRepo, startup);
       slideshowStore.setPhoto(result.current);
@@ -47,10 +47,8 @@
 
     // Start timer
     intervalId = window.setInterval(async () => {
-      let state;
-      const unsubscribe = slideshowStore.subscribe(s => state = s);
-      unsubscribe();
-      
+      const state = get(slideshowStore);
+
       if (!state || state.paused) return;
 
       if (state.secondsLeft <= 1) {
@@ -60,18 +58,17 @@
       }
     }, 1000);
 
-    return () => {
-      if (intervalId) clearInterval(intervalId);
-      if (musicPollId) clearInterval(musicPollId);
-      if (hudTimeoutId) clearTimeout(hudTimeoutId);
-    };
+  });
+
+  onDestroy(() => {
+    if (intervalId) clearInterval(intervalId);
+    if (musicPollId) clearInterval(musicPollId);
+    if (hudTimeoutId) clearTimeout(hudTimeoutId);
   });
 
   async function advance() {
-    let state;
-    const unsubscribe = slideshowStore.subscribe(s => state = s);
-    unsubscribe();
-    
+    const state = get(slideshowStore);
+
     if (!state) return;
     
     const result = await advanceSlide(photoRepo, state.queue);
@@ -90,11 +87,9 @@
       slideshowStore.togglePause();
     } else if (event.key === "m" || event.key === "M") {
       musicStore.toggleHud();
-      
-      let hudState;
-      const unsubscribe = musicStore.subscribe(s => hudState = s);
-      unsubscribe();
-      
+
+      const hudState = get(musicStore);
+
       if (!hudState) return;
       
       if (hudState.hudVisible) {

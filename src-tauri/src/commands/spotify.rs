@@ -1,31 +1,30 @@
 use crate::error::AppError;
 use crate::models::TrackDto;
-use mpris::{PlayerFinder, PlaybackStatus};
+use mpris::{PlaybackStatus, Player, PlayerFinder};
+
+fn find_player() -> Result<Player, AppError> {
+    Ok(PlayerFinder::new()?.find_active()?)
+}
 
 #[tauri::command]
 pub async fn spotify_play_pause() -> Result<(), AppError> {
-    let player = PlayerFinder::new()?.find_active()?;
-    player.checked_play_pause()?;
+    find_player()?.checked_play_pause()?;
     Ok(())
 }
 
 #[tauri::command]
 pub async fn spotify_next() -> Result<(), AppError> {
-    let player = PlayerFinder::new()?.find_active()?;
-    player.checked_next()?;
+    find_player()?.checked_next()?;
     Ok(())
 }
 
 #[tauri::command]
 pub async fn spotify_get_track() -> Result<TrackDto, AppError> {
-    let player = PlayerFinder::new()?.find_active()?;
+    let player = find_player()?;
     let metadata = player.get_metadata()?;
     let playback_status = player.get_playback_status()?;
 
-    let title = metadata
-        .title()
-        .unwrap_or("Unknown")
-        .to_string();
+    let title = metadata.title().unwrap_or("Unknown").to_string();
 
     let artist = metadata
         .artists()

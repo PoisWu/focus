@@ -5,10 +5,10 @@ use thiserror::Error;
 pub enum AppError {
     #[error("Unsplash API error: {0}")]
     Unsplash(String),
-    
+
     #[error("MPRIS error: {0}")]
     Mpris(String),
-    
+
     #[error("No music player found")]
     NoPlayer,
 }

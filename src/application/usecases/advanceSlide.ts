@@ -1,6 +1,5 @@
 import type { Photo } from "../../domain/photo";
 import type { PhotoRepository } from "../ports";
-import { prefetchPhotos } from "./prefetchPhotos";
 
 export async function advanceSlide(
   repository: PhotoRepository,
@@ -11,7 +10,8 @@ export async function advanceSlide(
   let newQueue = remaining;
 
   if (remaining.length < 3) {
-    newQueue = await prefetchPhotos(repository, remaining);
+    const fresh = await repository.fetchPhotos();
+    newQueue = [...remaining, ...fresh];
   }
 
   return {

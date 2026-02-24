@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
@@ -42,13 +42,12 @@ fn read_metadata(app: &AppHandle) -> Vec<PhotoMetadata> {
 fn write_metadata(app: &AppHandle, entries: &[PhotoMetadata]) -> Result<(), std::io::Error> {
     let dir = cache_dir(app);
     fs::create_dir_all(&dir)?;
-    let json = serde_json::to_string_pretty(entries)
-        .map_err(|e| std::io::Error::new(std::io::ErrorKind::Other, e))?;
+    let json = serde_json::to_string_pretty(entries).map_err(std::io::Error::other)?;
     fs::write(metadata_path(app), json)
 }
 
 /// Returns up to `count` photos from the cache using a time-based offset for variety.
-fn get_cached_sample(entries: &[PhotoMetadata], dir: &PathBuf, count: usize) -> Vec<PhotoDto> {
+fn get_cached_sample(entries: &[PhotoMetadata], dir: &Path, count: usize) -> Vec<PhotoDto> {
     let valid: Vec<&PhotoMetadata> = entries
         .iter()
         .filter(|e| dir.join(&e.filename).exists())
@@ -83,7 +82,7 @@ fn get_cached_sample(entries: &[PhotoMetadata], dir: &PathBuf, count: usize) -> 
 async fn try_fetch_and_cache(
     app: &AppHandle,
     existing: &[PhotoMetadata],
-    dir: &PathBuf,
+    dir: &Path,
 ) -> Result<Vec<PhotoDto>, String> {
     let existing_ids: HashSet<String> = existing.iter().map(|e| e.id.clone()).collect();
 
@@ -132,16 +131,13 @@ async fn try_fetch_and_cache(
         let filename = format!("{}.jpg", id);
         let file_path = dir.join(&filename);
 
-        if let Err(_) = fs::write(&file_path, &image_bytes) {
+        if fs::write(&file_path, &image_bytes).is_err() {
             continue;
         }
 
         let metadata = PhotoMetadata {
             id: id.clone(),
-            photographer: p["user"]["name"]
-                .as_str()
-                .unwrap_or("Unknown")
-                .to_string(),
+            photographer: p["user"]["name"].as_str().unwrap_or("Unknown").to_string(),
             profile_url: p["user"]["links"]["html"]
                 .as_str()
                 .unwrap_or("")
@@ -176,19 +172,7 @@ async fn try_fetch_and_cache(
 pub async fn get_cached_photos(app: AppHandle) -> Result<Vec<PhotoDto>, String> {
     let entries = read_metadata(&app);
     let dir = cache_dir(&app);
-
-    let photos = entries
-        .into_iter()
-        .filter(|entry| dir.join(&entry.filename).exists())
-        .map(|entry| PhotoDto {
-            id: entry.id,
-            url: dir.join(&entry.filename).to_string_lossy().to_string(),
-            photographer: entry.photographer,
-            profile_url: entry.profile_url,
-        })
-        .collect();
-
-    Ok(photos)
+    Ok(get_cached_sample(&entries, &dir, usize::MAX))
 }
 
 /// Fetches the next batch of photos, caching them to disk as they arrive.
@@ -267,8 +251,7 @@ mod tests {
 
     #[test]
     fn test_invalid_json_returns_empty() {
-        let result: Vec<PhotoMetadata> =
-            serde_json::from_str("not valid json").unwrap_or_default();
+        let result: Vec<PhotoMetadata> = serde_json::from_str("not valid json").unwrap_or_default();
         assert!(result.is_empty());
     }
 }
