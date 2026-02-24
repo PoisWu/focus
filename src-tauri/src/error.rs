@@ -11,6 +11,9 @@ pub enum AppError {
 
     #[error("No music player found")]
     NoPlayer,
+
+    #[error("Cache error: {0}")]
+    Cache(String),
 }
 
 impl From<reqwest::Error> for AppError {

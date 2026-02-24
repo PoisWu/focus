@@ -8,6 +8,7 @@
   "permissions": [
     "core:default",
     "opener:default",
+    "log:default",
     "core:window:allow-set-fullscreen",
     "core:window:allow-maximize",
     "core:window:allow-close"

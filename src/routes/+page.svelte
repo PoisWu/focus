@@ -2,6 +2,7 @@
   import { onMount, onDestroy } from "svelte";
   import { get } from "svelte/store";
   import { getCurrentWindow } from "@tauri-apps/api/window";
+  import { error as logError, warn as logWarn, debug as logDebug, info as logInfo } from "@tauri-apps/plugin-log";
   import PhotoFrame from "../presentation/components/PhotoFrame.svelte";
   import TimerDot from "../presentation/components/TimerDot.svelte";
   import MusicHud from "../presentation/components/MusicHud.svelte";
@@ -32,16 +33,23 @@
     // Load initial batch: use cache for instant start, or fetch from network on first launch
     try {
       const cachedPhotos = await loadLibrary(photoCache);
+      await logDebug(`Loaded ${cachedPhotos.length} photos from cache`);
+
       const startup = cachedPhotos.length > 0
         ? cachedPhotos
         : await photoRepo.fetchPhotos();
 
+      if (cachedPhotos.length === 0) {
+        await logInfo(`Cache empty — fetched ${startup.length} photos from network`);
+      }
+
       const result = await advanceSlide(photoRepo, startup);
+      await logInfo(`Startup: showing photo "${result.current.id}", queue has ${result.queue.length} photo(s)`);
       slideshowStore.setPhoto(result.current);
       slideshowStore.setQueue(result.queue);
     } catch (e) {
       error = e instanceof Error ? e.message : String(e);
-      console.error("Failed to load photos:", e);
+      await logError(`Failed to load photos: ${e}`);
       return;
     }
 
@@ -70,9 +78,11 @@
     const state = get(slideshowStore);
 
     if (!state) return;
-    
+
+    await logDebug(`Advancing slide, queue has ${state.queue.length} photo(s) remaining`);
     const result = await advanceSlide(photoRepo, state.queue);
-    
+    await logDebug(`Now showing photo "${result.current.id}", queue refilled to ${result.queue.length} photo(s)`);
+
     slideshowStore.setPhoto(result.current);
     slideshowStore.setQueue(result.queue);
     slideshowStore.resetTimer();

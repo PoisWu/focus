@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { warn } from "@tauri-apps/plugin-log";
 import type { MusicController } from "../application/ports";
 import type { Track } from "../domain/track";
 
@@ -16,6 +17,7 @@ export class TauriMusicController implements MusicController {
       const track = await invoke<Track>("spotify_get_track");
       return track;
     } catch (error) {
+      await warn(`Failed to get current track: ${error}`);
       return null;
     }
   }

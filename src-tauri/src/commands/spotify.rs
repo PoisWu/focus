@@ -3,17 +3,28 @@ use crate::models::TrackDto;
 use mpris::{PlaybackStatus, Player, PlayerFinder};
 
 fn find_player() -> Result<Player, AppError> {
-    Ok(PlayerFinder::new()?.find_active()?)
+    match PlayerFinder::new()?.find_active() {
+        Ok(player) => {
+            log::debug!("Found active music player: {}", player.bus_name());
+            Ok(player)
+        }
+        Err(e) => {
+            log::error!("Failed to find active music player: {}", e);
+            Err(AppError::from(e))
+        }
+    }
 }
 
 #[tauri::command]
 pub async fn spotify_play_pause() -> Result<(), AppError> {
+    log::debug!("Toggling play/pause");
     find_player()?.checked_play_pause()?;
     Ok(())
 }
 
 #[tauri::command]
 pub async fn spotify_next() -> Result<(), AppError> {
+    log::debug!("Skipping to next track");
     find_player()?.checked_next()?;
     Ok(())
 }
@@ -21,8 +32,14 @@ pub async fn spotify_next() -> Result<(), AppError> {
 #[tauri::command]
 pub async fn spotify_get_track() -> Result<TrackDto, AppError> {
     let player = find_player()?;
-    let metadata = player.get_metadata()?;
-    let playback_status = player.get_playback_status()?;
+    let metadata = player.get_metadata().map_err(|e| {
+        log::error!("Failed to get track metadata: {}", e);
+        AppError::from(e)
+    })?;
+    let playback_status = player.get_playback_status().map_err(|e| {
+        log::error!("Failed to get playback status: {}", e);
+        AppError::from(e)
+    })?;
 
     let title = metadata.title().unwrap_or("Unknown").to_string();
 
@@ -37,6 +54,8 @@ pub async fn spotify_get_track() -> Result<TrackDto, AppError> {
         PlaybackStatus::Stopped => "Stopped",
     }
     .to_string();
+
+    log::debug!("Current track: {} by {} [{}]", title, artist, status);
 
     Ok(TrackDto {
         title,
