@@ -12,5 +12,5 @@ export async function loadLibrary(
     [photos[i], photos[j]] = [photos[j], photos[i]];
   }
 
-  return photos;
+  return photos.slice(0, 10);
 }

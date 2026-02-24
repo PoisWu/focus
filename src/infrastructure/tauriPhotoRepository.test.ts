@@ -5,6 +5,12 @@ import { TauriPhotoRepository } from "./tauriPhotoRepository";
 
 describe("TauriPhotoRepository", () => {
   beforeEach(() => {
+    // convertFileSrc is not available in the test environment; pass URLs through unchanged
+    (window as any).__TAURI_INTERNALS__ = {
+      ...(window as any).__TAURI_INTERNALS__,
+      convertFileSrc: (path: string) => path,
+    };
+
     mockIPC((cmd, args) => {
       if (cmd === "fetch_photos") {
         return Promise.resolve([

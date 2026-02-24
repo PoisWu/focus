@@ -21,14 +21,4 @@ export class TauriPhotoCache implements PhotoCache {
     }));
   }
 
-  async fetchAndCache(): Promise<Photo[]> {
-    const photos = await invoke<PhotoDto[]>("fetch_and_cache_photos");
-
-    return photos.map((dto) => ({
-      id: dto.id,
-      url: convertFileSrc(dto.url),
-      photographer: dto.photographer,
-      profileUrl: dto.profile_url,
-    }));
-  }
 }

@@ -1,6 +1,7 @@
 use std::collections::HashSet;
 use std::fs;
 use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use serde::{Deserialize, Serialize};
 use tauri::AppHandle;
@@ -46,40 +47,48 @@ fn write_metadata(app: &AppHandle, entries: &[PhotoMetadata]) -> Result<(), std:
     fs::write(metadata_path(app), json)
 }
 
-#[tauri::command]
-pub async fn get_cached_photos(app: AppHandle) -> Result<Vec<PhotoDto>, String> {
-    let entries = read_metadata(&app);
-    let dir = cache_dir(&app);
-
-    let photos = entries
-        .into_iter()
-        .filter(|entry| dir.join(&entry.filename).exists())
-        .map(|entry| PhotoDto {
-            id: entry.id,
-            url: dir.join(&entry.filename).to_string_lossy().to_string(),
-            photographer: entry.photographer,
-            profile_url: entry.profile_url,
-        })
+/// Returns up to `count` photos from the cache using a time-based offset for variety.
+fn get_cached_sample(entries: &[PhotoMetadata], dir: &PathBuf, count: usize) -> Vec<PhotoDto> {
+    let valid: Vec<&PhotoMetadata> = entries
+        .iter()
+        .filter(|e| dir.join(&e.filename).exists())
         .collect();
 
-    Ok(photos)
-}
-
-#[tauri::command]
-pub async fn fetch_and_cache_photos(app: AppHandle) -> Result<Vec<PhotoDto>, String> {
-    let existing = read_metadata(&app);
-
-    if existing.len() >= MAX_PHOTOS {
-        return Ok(Vec::new());
+    if valid.is_empty() {
+        return Vec::new();
     }
 
+    let offset = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.subsec_nanos() as usize)
+        .unwrap_or(0)
+        % valid.len();
+
+    let take = count.min(valid.len());
+    (0..take)
+        .map(|i| {
+            let e = valid[(offset + i) % valid.len()];
+            PhotoDto {
+                id: e.id.clone(),
+                url: dir.join(&e.filename).to_string_lossy().to_string(),
+                photographer: e.photographer.clone(),
+                profile_url: e.profile_url.clone(),
+            }
+        })
+        .collect()
+}
+
+/// Fetches 10 photos from Unsplash, downloads them to disk, updates the metadata cache,
+/// and returns only the newly cached photos.
+async fn try_fetch_and_cache(
+    app: &AppHandle,
+    existing: &[PhotoMetadata],
+    dir: &PathBuf,
+) -> Result<Vec<PhotoDto>, String> {
     let existing_ids: HashSet<String> = existing.iter().map(|e| e.id.clone()).collect();
 
-    // Fetch from Unsplash
-    let access_key = match std::env::var("UNSPLASH_ACCESS_KEY") {
-        Ok(key) => key,
-        Err(_) => return Ok(Vec::new()),
-    };
+    let access_key = std::env::var("UNSPLASH_ACCESS_KEY")
+        .map_err(|_| "UNSPLASH_ACCESS_KEY not set".to_string())?;
 
     let url = format!(
         "https://api.unsplash.com/photos/random?count=10&query=nature&client_id={}",
@@ -87,23 +96,18 @@ pub async fn fetch_and_cache_photos(app: AppHandle) -> Result<Vec<PhotoDto>, Str
     );
 
     let client = reqwest::Client::new();
+    let api_photos: Vec<serde_json::Value> = client
+        .get(&url)
+        .send()
+        .await
+        .map_err(|e| e.to_string())?
+        .json()
+        .await
+        .map_err(|e| e.to_string())?;
 
-    let response = match client.get(&url).send().await {
-        Ok(r) => r,
-        Err(_) => return Ok(Vec::new()),
-    };
+    fs::create_dir_all(dir).map_err(|e| e.to_string())?;
 
-    let api_photos: Vec<serde_json::Value> = match response.json().await {
-        Ok(p) => p,
-        Err(_) => return Ok(Vec::new()),
-    };
-
-    let dir = cache_dir(&app);
-    if let Err(_) = fs::create_dir_all(&dir) {
-        return Ok(Vec::new());
-    }
-
-    let mut new_metadata = existing.clone();
+    let mut new_metadata = existing.to_vec();
     let mut new_dtos: Vec<PhotoDto> = Vec::new();
 
     for p in api_photos {
@@ -117,7 +121,6 @@ pub async fn fetch_and_cache_photos(app: AppHandle) -> Result<Vec<PhotoDto>, Str
             continue;
         }
 
-        // Download image bytes
         let image_bytes = match client.get(&download_url).send().await {
             Ok(resp) => match resp.bytes().await {
                 Ok(b) => b,
@@ -143,7 +146,7 @@ pub async fn fetch_and_cache_photos(app: AppHandle) -> Result<Vec<PhotoDto>, Str
                 .as_str()
                 .unwrap_or("")
                 .to_string(),
-            filename: filename.clone(),
+            filename,
         };
 
         new_dtos.push(PhotoDto {
@@ -160,10 +163,64 @@ pub async fn fetch_and_cache_photos(app: AppHandle) -> Result<Vec<PhotoDto>, Str
         }
     }
 
-    // Persist updated metadata
-    let _ = write_metadata(&app, &new_metadata);
+    let _ = write_metadata(app, &new_metadata);
+
+    if new_dtos.is_empty() {
+        return Err("no new photos downloaded".to_string());
+    }
 
     Ok(new_dtos)
+}
+
+#[tauri::command]
+pub async fn get_cached_photos(app: AppHandle) -> Result<Vec<PhotoDto>, String> {
+    let entries = read_metadata(&app);
+    let dir = cache_dir(&app);
+
+    let photos = entries
+        .into_iter()
+        .filter(|entry| dir.join(&entry.filename).exists())
+        .map(|entry| PhotoDto {
+            id: entry.id,
+            url: dir.join(&entry.filename).to_string_lossy().to_string(),
+            photographer: entry.photographer,
+            profile_url: entry.profile_url,
+        })
+        .collect();
+
+    Ok(photos)
+}
+
+/// Fetches the next batch of photos, caching them to disk as they arrive.
+///
+/// Fallback scenarios:
+/// - Scenario 3 (cache full): returns 10 cached photos without hitting the network.
+/// - Scenario 2 (network error): returns up to 10 cached photos instead.
+///
+/// Returns an error only when the network is unreachable **and** the cache is empty.
+#[tauri::command]
+pub async fn fetch_photos(app: AppHandle) -> Result<Vec<PhotoDto>, String> {
+    let existing = read_metadata(&app);
+    let dir = cache_dir(&app);
+
+    // Scenario 3: cache is full — serve from disk, skip the network
+    if existing.len() >= MAX_PHOTOS {
+        return Ok(get_cached_sample(&existing, &dir, 10));
+    }
+
+    // Normal path: fetch 10 fresh photos and accumulate in cache
+    match try_fetch_and_cache(&app, &existing, &dir).await {
+        Ok(photos) => Ok(photos),
+        // Scenario 2: network failed — fall back to cached photos
+        Err(_) => {
+            let cached = get_cached_sample(&existing, &dir, 10);
+            if cached.is_empty() {
+                Err("No photos available: network unreachable and cache is empty".to_string())
+            } else {
+                Ok(cached)
+            }
+        }
+    }
 }
 
 #[cfg(test)]

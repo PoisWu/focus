@@ -22,7 +22,6 @@ describe("loadLibrary use case", () => {
 
     const mockCache: PhotoCache = {
       getCachedPhotos: vi.fn().mockResolvedValue(cachedPhotos),
-      fetchAndCache: vi.fn(),
     };
 
     const result = await loadLibrary(mockCache);
@@ -34,7 +33,6 @@ describe("loadLibrary use case", () => {
   it("should return empty array when no cache exists", async () => {
     const mockCache: PhotoCache = {
       getCachedPhotos: vi.fn().mockResolvedValue([]),
-      fetchAndCache: vi.fn(),
     };
 
     const result = await loadLibrary(mockCache);
@@ -52,14 +50,13 @@ describe("loadLibrary use case", () => {
 
     const mockCache: PhotoCache = {
       getCachedPhotos: vi.fn().mockResolvedValue([...photos]),
-      fetchAndCache: vi.fn(),
     };
 
     const result = await loadLibrary(mockCache);
 
-    expect(result).toHaveLength(20);
-    // All original photos should still be present (just reordered)
-    const ids = result.map((p) => p.id).sort();
-    expect(ids).toEqual(photos.map((p) => p.id).sort());
+    expect(result).toHaveLength(10);
+    // All returned photos should be a subset of the originals (shuffled then sliced)
+    const originalIds = photos.map((p) => p.id);
+    result.forEach((p) => expect(originalIds).toContain(p.id));
   });
 });

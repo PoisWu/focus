@@ -6,7 +6,6 @@ export interface PhotoRepository {
 
 export interface PhotoCache {
   getCachedPhotos(): Promise<Photo[]>;
-  fetchAndCache(): Promise<Photo[]>;
 }
 
 export interface SlideshowClock {

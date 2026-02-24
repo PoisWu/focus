@@ -1,4 +1,4 @@
-import { invoke } from "@tauri-apps/api/core";
+import { invoke, convertFileSrc } from "@tauri-apps/api/core";
 import type { PhotoRepository } from "../application/ports";
 import type { Photo } from "../domain/photo";
 
@@ -15,7 +15,7 @@ export class TauriPhotoRepository implements PhotoRepository {
     
     return photos.map((dto) => ({
       id: dto.id,
-      url: dto.url,
+      url: convertFileSrc(dto.url),
       photographer: dto.photographer,
       profileUrl: dto.profile_url,
     }));

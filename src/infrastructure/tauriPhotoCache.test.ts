@@ -29,16 +29,6 @@ describe("TauriPhotoCache", () => {
           },
         ]);
       }
-      if (cmd === "fetch_and_cache_photos") {
-        return Promise.resolve([
-          {
-            id: "new1",
-            url: "/home/user/.cache/com.cheng-yen.focus/photos/new1.jpg",
-            photographer: "Charlie",
-            profile_url: "https://unsplash.com/@charlie",
-          },
-        ]);
-      }
     });
   });
 
@@ -51,15 +41,5 @@ describe("TauriPhotoCache", () => {
     expect(photos[0].photographer).toBe("Alice");
     expect(photos[0]).toHaveProperty("profileUrl");
     expect(photos[0]).not.toHaveProperty("profile_url");
-  });
-
-  it("should fetch and cache new photos and map fields", async () => {
-    const cache = new TauriPhotoCache();
-    const photos = await cache.fetchAndCache();
-
-    expect(photos).toHaveLength(1);
-    expect(photos[0].id).toBe("new1");
-    expect(photos[0].photographer).toBe("Charlie");
-    expect(photos[0]).toHaveProperty("profileUrl");
   });
 });
