@@ -3,7 +3,6 @@
   import { getCurrentWindow } from "@tauri-apps/api/window";
   import PhotoFrame from "../presentation/components/PhotoFrame.svelte";
   import TimerDot from "../presentation/components/TimerDot.svelte";
-  import Attribution from "../presentation/components/Attribution.svelte";
   import MusicHud from "../presentation/components/MusicHud.svelte";
   import { slideshowStore } from "../infrastructure/slideshowStore";
   import { musicStore } from "../infrastructure/musicStore";
@@ -18,14 +17,26 @@
   let intervalId: number | null = null;
   let musicPollId: number | null = null;
   let hudTimeoutId: number | null = null;
+  let error: string | null = null;
 
   onMount(async () => {
+    // Force fullscreen (static config not always respected on Linux)
+    const win = getCurrentWindow();
+    await win.maximize();
+    await win.setFullscreen(true);
+
     // Initial photo load
-    const initialPhotos = await prefetchPhotos(photoRepo, []);
-    const result = await advanceSlide(photoRepo, initialPhotos);
-    
-    slideshowStore.setPhoto(result.current);
-    slideshowStore.setQueue(result.queue);
+    try {
+      const initialPhotos = await prefetchPhotos(photoRepo, []);
+      const result = await advanceSlide(photoRepo, initialPhotos);
+
+      slideshowStore.setPhoto(result.current);
+      slideshowStore.setQueue(result.queue);
+    } catch (e) {
+      error = e instanceof Error ? e.message : String(e);
+      console.error("Failed to load photos:", e);
+      return;
+    }
 
     // Start timer
     intervalId = window.setInterval(async () => {
@@ -117,9 +128,10 @@
 <svelte:window onkeydown={handleKeyboard} />
 
 <div class="app">
-  {#if $slideshowStore.current}
+  {#if error}
+    <div class="error">{error}</div>
+  {:else if $slideshowStore.current}
     <PhotoFrame photo={$slideshowStore.current} />
-    <Attribution photo={$slideshowStore.current} />
     <TimerDot secondsLeft={$slideshowStore.secondsLeft} />
   {/if}
 
@@ -144,5 +156,19 @@
     width: 100vw;
     height: 100vh;
     position: relative;
+  }
+
+  .error {
+    color: #ff6b6b;
+    font-size: 1rem;
+    padding: 2rem;
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    text-align: center;
+    background: rgba(255, 0, 0, 0.1);
+    border: 1px solid rgba(255, 107, 107, 0.4);
+    border-radius: 8px;
   }
 </style>
