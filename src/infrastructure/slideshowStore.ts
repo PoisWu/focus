@@ -9,11 +9,13 @@ interface SlideshowState {
 }
 
 function createSlideshowStore() {
+  const SLIDE_DURATION = 300; // 5 minutes in seconds
+
   const { subscribe, set, update } = writable<SlideshowState>({
     current: null,
     queue: [],
     paused: false,
-    secondsLeft: 30,
+    secondsLeft: SLIDE_DURATION,
   });
 
   return {
@@ -24,9 +26,9 @@ function createSlideshowStore() {
     togglePause: () => update((state) => ({ ...state, paused: !state.paused })),
     tickSecond: () =>
       update((state) => ({ ...state, secondsLeft: state.secondsLeft - 1 })),
-    resetTimer: () => update((state) => ({ ...state, secondsLeft: 30 })),
+    resetTimer: () => update((state) => ({ ...state, secondsLeft: SLIDE_DURATION })),
     reset: () =>
-      set({ current: null, queue: [], paused: false, secondsLeft: 30 }),
+      set({ current: null, queue: [], paused: false, secondsLeft: SLIDE_DURATION }),
   };
 }
 
